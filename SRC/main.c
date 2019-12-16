@@ -9,7 +9,6 @@
 #include "user_macro.h"
 #include <math.h>
 
-#define DELAY 35.700L
 
 //////// ADC start parameters ////////
 #define ADC_MODCLK 0x3 // HSPCLK = SYSCLKOUT/2*ADC_MODCLK2 = 150/(2*3)   = 25.0 MHz
@@ -35,7 +34,7 @@
 
 struct compx {float real,imag;};                                    //定义一个复数结构
 struct compx s[FFT_N];
-float s_abs[FFT_N];
+float s_freq[FFT_N/2];
 Uint16 array_index;
 Uint16 i;
 Uint16 gpio_flag;
@@ -48,8 +47,9 @@ struct compx EE(struct compx a,struct compx b)
  return(c);
 }
 
-//////// ///////
 
+//Sample rate is 8.3Msps
+// Every point in FFT regrade as 8.3e6*2/FFT_N = 16e3
 
 float adoffset;
 float adsum;
@@ -62,6 +62,7 @@ void SetSys();
 void SetAdc();
 void FFT(struct compx *xin);
 void Sampling(void);
+Uint16 FindMax(float * s_abs, Uint16 size);
 
 
 
@@ -71,10 +72,9 @@ void main(void)
 ////////Confige system start//////
    SetSys();
    InitAdc();
-   asm(" RPT #8 || NOP");
+   asm(" RPT #8 || NOP"); //wait ADC for ADC reset
    SetAdc();
 ////////Confige system end //////
-
 
    // Clear A0Sample
    for (i=0; i<BUF_SIZE; i++) {A0Sample[i] = 0;}
@@ -103,9 +103,12 @@ void main(void)
       }
      FFT(s);                                        //进行快速福利叶变换
 
-     for(i=0;i<FFT_N;i++)                           //求变换后结果的模值，存入复数的实部部分
-     s_abs[i] = sqrt(s[i].real*s[i].real+s[i].imag*s[i].imag);
+     //Convert to freq field
+     for(i=0;i<FFT_N/2;i++)                           //求变换后结果的模值，存入复数的实部部分
+         s_freq[i] = sqrt(s[i].real*s[i].real+s[i].imag*s[i].imag);
 
+
+     //Find Max
   }
 }
 
@@ -117,28 +120,6 @@ void main(void)
 
 ///////////////////////////////////////////////////////////////////
 
-
-void configtestledON(void)
-{
-   EALLOW;
-    SYSRUN_SET = 1;
-   EDIS;
-}
-
-void configtestledOFF(void)
-{
-   EALLOW;
-    SYSRUN_CLEAR = 1;
-   EDIS;
-}
-void delay (Uint16 t)
-{ Uint16 i;
-  while(t--)
-  {
-     for(i=0;i<125;i++)
-      asm(" RPT #3 || NOP"); 
-  }
-}
 
 void SetAdc()
 {
@@ -223,8 +204,6 @@ void FFT(struct compx *xin)
   }
 
 }
-
-
 
 
 //------------------------------------------------------------------------------------
@@ -322,6 +301,22 @@ void Sampling(void){
 #endif // -- NO_SHIFT || POST_SHIFT
 
 
-    GpioDataRegs.GPBCLEAR.bit.GPIO34 = 1;  // Clear GPIO34 for monitoring  -optional
+    GpioDataRegs.GPBCLEAR.bit.GPIO34 = 1;  // Clear GPIO34 for monitoring
+}
+
+
+Uint16 FindMax(float * s_abs, Uint16 size){
+
+    float max = s_abs[0];
+    int j = 0;
+    int max_index = 0;
+
+    for(j = 1; j<size; j++){
+        if(s_abs[j] > max ){
+            max = s_abs[j];
+            max_index = j;
+        }
+    }
+    return max_index;
 }
 
